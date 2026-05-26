@@ -1,5 +1,5 @@
 # SupportDesk CRM
-
+🔗 Live Demo: https://web-production-e66a9.up.railway.app
 A lightweight customer support ticket management system built with FastAPI, SQLite, and plain HTML/Tailwind CSS.
 
 ## Features
@@ -25,7 +25,7 @@ A lightweight customer support ticket management system built with FastAPI, SQLi
 
 ### 1. Clone the repo
 ```bash
-git clone https://github.com/YOUR_USERNAME/support-crm.git
+git clone https://github.com/chetnasingh00/support-crm.git
 cd support-crm
 ```
 
