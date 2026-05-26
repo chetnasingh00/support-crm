@@ -1,0 +1,329 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>SupportDesk CRM</title>
+<script src="https://cdn.tailwindcss.com"></script>
+<style>
+  @import url('https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500&family=IBM+Plex+Sans:wght@400;500;600&display=swap');
+  * { font-family: 'IBM Plex Sans', sans-serif; }
+  code, .mono { font-family: 'IBM Plex Mono', monospace; }
+  .ticket-row { transition: background 0.1s; }
+  .ticket-row:hover { background: #f8fffe; }
+  .ticket-row.selected { background: #e6faf3; border-left: 3px solid #1D9E75; }
+  .status-open { background:#dbeafe; color:#1d4ed8; }
+  .status-inprogress { background:#fef3c7; color:#92400e; }
+  .status-closed { background:#dcfce7; color:#166534; }
+  .sidebar-active { background:#e6faf3; color:#085041; font-weight:500; }
+  ::-webkit-scrollbar { width: 4px; } ::-webkit-scrollbar-track { background: transparent; } ::-webkit-scrollbar-thumb { background:#d1d5db; border-radius:99px; }
+  input:focus, textarea:focus, select:focus { outline: none; border-color: #1D9E75 !important; }
+  .btn-primary { background:#1D9E75; color:white; } .btn-primary:hover { background:#0F6E56; }
+  .loading { animation: spin 1s linear infinite; display: inline-block; }
+  @keyframes spin { to { transform: rotate(360deg); } }
+  .fade-in { animation: fadeIn 0.2s ease; }
+  @keyframes fadeIn { from { opacity:0; transform:translateY(4px); } to { opacity:1; transform:none; } }
+</style>
+</head>
+<body class="bg-gray-50 text-gray-900 h-screen overflow-hidden">
+
+<!-- MODAL: Create Ticket -->
+<div id="modal" class="hidden fixed inset-0 bg-black/40 z-50 flex items-center justify-center p-4">
+  <div class="bg-white rounded-xl shadow-xl w-full max-w-md">
+    <div class="flex justify-between items-center px-6 py-4 border-b border-gray-100">
+      <h2 class="font-semibold text-base">Create Support Ticket</h2>
+      <button onclick="closeModal()" class="text-gray-400 hover:text-gray-700 text-xl leading-none">&times;</button>
+    </div>
+    <div class="px-6 py-5 flex flex-col gap-4">
+      <div>
+        <label class="text-xs font-medium text-gray-500 block mb-1">CUSTOMER NAME *</label>
+        <input id="f-name" type="text" placeholder="Jane Doe" class="w-full border border-gray-200 rounded-lg px-3 py-2 text-sm" />
+      </div>
+      <div>
+        <label class="text-xs font-medium text-gray-500 block mb-1">CUSTOMER EMAIL *</label>
+        <input id="f-email" type="email" placeholder="jane@example.com" class="w-full border border-gray-200 rounded-lg px-3 py-2 text-sm" />
+      </div>
+      <div>
+        <label class="text-xs font-medium text-gray-500 block mb-1">ISSUE TITLE *</label>
+        <input id="f-subject" type="text" placeholder="Brief description of issue" class="w-full border border-gray-200 rounded-lg px-3 py-2 text-sm" />
+      </div>
+      <div>
+        <label class="text-xs font-medium text-gray-500 block mb-1">DESCRIPTION *</label>
+        <textarea id="f-desc" rows="3" placeholder="Detailed description…" class="w-full border border-gray-200 rounded-lg px-3 py-2 text-sm resize-none"></textarea>
+      </div>
+    </div>
+    <div class="px-6 py-4 border-t border-gray-100 flex justify-end gap-2">
+      <button onclick="closeModal()" class="px-4 py-2 text-sm border border-gray-200 rounded-lg hover:bg-gray-50">Cancel</button>
+      <button onclick="createTicket()" class="btn-primary px-4 py-2 text-sm rounded-lg font-medium">Create Ticket</button>
+    </div>
+  </div>
+</div>
+
+<!-- MAIN LAYOUT -->
+<div class="flex h-screen">
+
+  <!-- SIDEBAR -->
+  <div class="w-52 bg-white border-r border-gray-100 flex flex-col flex-shrink-0">
+    <div class="px-4 py-4 border-b border-gray-100">
+      <div class="font-semibold text-sm tracking-wide">SUPPORTDESK</div>
+      <div class="text-xs text-gray-400 mt-0.5">Customer CRM</div>
+    </div>
+    <nav class="p-2 flex-1">
+      <button onclick="setStatusFilter(null, this)" id="nav-all"
+        class="sidebar-active w-full flex items-center gap-2 px-3 py-2 rounded-lg text-sm mb-1 text-left">
+        🎫 All Tickets
+        <span id="badge-open" class="ml-auto bg-teal-600 text-white text-xs px-2 py-0.5 rounded-full">0</span>
+      </button>
+      <button onclick="openModal()" class="w-full flex items-center gap-2 px-3 py-2 rounded-lg text-sm text-gray-500 hover:bg-gray-50 text-left">
+        ➕ New Ticket
+      </button>
+    </nav>
+    <div id="sidebar-stats" class="p-3 border-t border-gray-100 text-xs text-gray-500 flex flex-col gap-1"></div>
+  </div>
+
+  <!-- MAIN AREA -->
+  <div class="flex-1 flex flex-col overflow-hidden">
+
+    <!-- HEADER -->
+    <div class="h-14 bg-white border-b border-gray-100 flex items-center px-5 gap-3 flex-shrink-0">
+      <div class="font-semibold text-sm flex-1">All Tickets</div>
+      <div class="flex items-center gap-2 bg-gray-50 border border-gray-200 rounded-lg px-3 py-1.5 w-56">
+        <span class="text-gray-400 text-sm">🔍</span>
+        <input type="text" id="search-input" placeholder="Search tickets…"
+          class="bg-transparent border-none text-sm flex-1" oninput="handleSearch(this.value)" />
+      </div>
+      <button onclick="openModal()" class="btn-primary px-3 py-1.5 text-sm rounded-lg font-medium">+ New Ticket</button>
+    </div>
+
+    <!-- FILTER BAR -->
+    <div class="bg-white border-b border-gray-100 px-5 py-2.5 flex items-center gap-2 flex-shrink-0">
+      <span class="text-xs text-gray-400 mr-1">Filter:</span>
+      <button onclick="setStatusFilter(null, this)" data-filter="all"
+        class="filter-pill px-3 py-1 rounded-full text-xs border border-gray-200 text-gray-500 hover:border-gray-400 active-pill bg-teal-600 text-white border-teal-600">All</button>
+      <button onclick="setStatusFilter('Open', this)" data-filter="Open"
+        class="filter-pill px-3 py-1 rounded-full text-xs border border-gray-200 text-gray-500 hover:border-gray-400">Open</button>
+      <button onclick="setStatusFilter('In Progress', this)" data-filter="In Progress"
+        class="filter-pill px-3 py-1 rounded-full text-xs border border-gray-200 text-gray-500 hover:border-gray-400">In Progress</button>
+      <button onclick="setStatusFilter('Closed', this)" data-filter="Closed"
+        class="filter-pill px-3 py-1 rounded-full text-xs border border-gray-200 text-gray-500 hover:border-gray-400">Closed</button>
+    </div>
+
+    <div class="flex flex-1 overflow-hidden">
+
+      <!-- TICKET LIST -->
+      <div class="flex-1 overflow-y-auto">
+        <!-- list header -->
+        <div class="grid grid-cols-[100px_1fr_130px_100px_110px] gap-3 px-4 py-2 text-xs text-gray-400 font-medium tracking-wide border-b border-gray-100 bg-gray-50">
+          <span>TICKET ID</span><span>SUBJECT</span><span>CUSTOMER</span><span>STATUS</span><span class="text-right">DATE</span>
+        </div>
+        <div id="ticket-list" class="flex flex-col"></div>
+      </div>
+
+      <!-- DETAIL PANEL -->
+      <div id="detail-panel" class="w-80 border-l border-gray-100 bg-white flex flex-col overflow-hidden flex-shrink-0">
+        <div class="flex-1 flex items-center justify-center text-gray-400 text-sm flex-col gap-2 p-8 text-center">
+          <span class="text-3xl">📭</span>
+          Select a ticket to view details
+        </div>
+      </div>
+
+    </div>
+  </div>
+</div>
+
+<script>
+let currentFilter = null;
+let currentSearch = '';
+let selectedId = null;
+let allTickets = [];
+
+// ── API helpers ──────────────────────────────────────────
+
+async function apiFetch(url, options={}) {
+  const r = await fetch(url, { headers:{'Content-Type':'application/json'}, ...options });
+  if (!r.ok) throw new Error(await r.text());
+  return r.json();
+}
+
+// ── Data ─────────────────────────────────────────────────
+
+async function loadTickets() {
+  try {
+    const params = new URLSearchParams();
+    if (currentFilter) params.set('status', currentFilter);
+    if (currentSearch) params.set('search', currentSearch);
+    allTickets = await apiFetch('/api/tickets?' + params.toString());
+    renderList();
+    updateSidebar();
+  } catch(e) { console.error(e); }
+}
+
+// ── Render ───────────────────────────────────────────────
+
+function statusBadge(s) {
+  if (s === 'Open') return '<span class="status-open text-xs px-2 py-0.5 rounded-full font-medium">Open</span>';
+  if (s === 'In Progress') return '<span class="status-inprogress text-xs px-2 py-0.5 rounded-full font-medium">In Progress</span>';
+  return '<span class="status-closed text-xs px-2 py-0.5 rounded-full font-medium">Closed</span>';
+}
+
+function fmtDate(iso) {
+  const d = new Date(iso + (iso.endsWith('Z') ? '' : 'Z'));
+  return d.toLocaleDateString('en-IN',{day:'2-digit',month:'short'}) + ' ' + d.toLocaleTimeString('en-IN',{hour:'2-digit',minute:'2-digit',hour12:true});
+}
+
+function renderList() {
+  const el = document.getElementById('ticket-list');
+  if (!allTickets.length) {
+    el.innerHTML = '<div class="text-center py-16 text-gray-400 text-sm">No tickets found</div>';
+    return;
+  }
+  el.innerHTML = allTickets.map(t => `
+    <div class="ticket-row${selectedId===t.ticket_id?' selected':''} grid grid-cols-[100px_1fr_130px_100px_110px] gap-3 items-center px-4 py-3 border-b border-gray-50 cursor-pointer"
+      onclick="selectTicket('${t.ticket_id}')">
+      <span class="mono text-xs text-teal-700 font-medium">${t.ticket_id}</span>
+      <div>
+        <div class="text-sm font-medium truncate">${t.subject}</div>
+        <div class="text-xs text-gray-400 mt-0.5">${t.customer_name}</div>
+      </div>
+      <span class="text-xs text-gray-400 truncate">${t.customer_email}</span>
+      ${statusBadge(t.status)}
+      <span class="text-xs text-gray-400 text-right">${fmtDate(t.created_at)}</span>
+    </div>
+  `).join('');
+}
+
+function updateSidebar() {
+  // fetch all tickets for stats (ignoring current filter)
+  apiFetch('/api/tickets').then(all => {
+    const open = all.filter(t=>t.status==='Open').length;
+    const inp  = all.filter(t=>t.status==='In Progress').length;
+    const cls  = all.filter(t=>t.status==='Closed').length;
+    document.getElementById('badge-open').textContent = open;
+    document.getElementById('sidebar-stats').innerHTML = `
+      <div class="flex justify-between"><span>🔵 Open</span><b>${open}</b></div>
+      <div class="flex justify-between"><span>🟡 In Progress</span><b>${inp}</b></div>
+      <div class="flex justify-between"><span>🟢 Closed</span><b>${cls}</b></div>
+      <div class="flex justify-between mt-1 pt-1 border-t border-gray-100 text-gray-700"><span>Total</span><b>${all.length}</b></div>
+    `;
+  });
+}
+
+async function selectTicket(id) {
+  selectedId = id;
+  renderList();
+  const panel = document.getElementById('detail-panel');
+  panel.innerHTML = '<div class="flex-1 flex items-center justify-center p-8 text-gray-400 text-sm">Loading…</div>';
+  try {
+    const t = await apiFetch('/api/tickets/' + id);
+    renderDetail(t);
+  } catch(e) { panel.innerHTML = '<div class="p-6 text-red-500 text-sm">Failed to load ticket.</div>'; }
+}
+
+function renderDetail(t) {
+  const panel = document.getElementById('detail-panel');
+  panel.innerHTML = `
+    <div class="border-b border-gray-100 px-4 py-3 fade-in">
+      <div class="mono text-xs text-gray-400 mb-1">${t.ticket_id} · ${fmtDate(t.created_at)}</div>
+      <div class="font-semibold text-sm leading-snug">${t.subject}</div>
+    </div>
+    <div class="flex-1 overflow-y-auto px-4 py-3 flex flex-col gap-4 fade-in">
+      <div>
+        <div class="text-xs text-gray-400 font-medium mb-1">CUSTOMER</div>
+        <div class="text-sm font-medium">${t.customer_name}</div>
+        <div class="text-xs text-gray-400">${t.customer_email}</div>
+      </div>
+      <div>
+        <div class="text-xs text-gray-400 font-medium mb-1">DESCRIPTION</div>
+        <div class="text-xs text-gray-600 leading-relaxed bg-gray-50 rounded-lg p-3 border border-gray-100">${t.description}</div>
+      </div>
+      <div>
+        <div class="text-xs text-gray-400 font-medium mb-2">NOTES (${t.notes.length})</div>
+        <div id="notes-container">
+          ${t.notes.length ? t.notes.map(n=>`
+            <div class="bg-teal-50 border border-teal-100 rounded-lg p-2.5 mb-2">
+              <div class="text-xs text-gray-700 leading-relaxed">${n.note_text}</div>
+              <div class="text-xs text-gray-400 mt-1">${fmtDate(n.created_at)}</div>
+            </div>`).join('') : '<div class="text-xs text-gray-400">No notes yet.</div>'}
+        </div>
+      </div>
+    </div>
+    <div class="border-t border-gray-100 px-4 py-3 flex flex-col gap-2 fade-in">
+      <div class="text-xs text-gray-400 font-medium">UPDATE STATUS</div>
+      <select id="status-select" onchange="updateStatus('${t.ticket_id}', this.value)"
+        class="w-full border border-gray-200 rounded-lg px-3 py-2 text-sm">
+        <option${t.status==='Open'?' selected':''}>Open</option>
+        <option${t.status==='In Progress'?' selected':''}>In Progress</option>
+        <option${t.status==='Closed'?' selected':''}>Closed</option>
+      </select>
+      <textarea id="note-input" rows="2" placeholder="Add a note…"
+        class="w-full border border-gray-200 rounded-lg px-3 py-2 text-sm resize-none"></textarea>
+      <button onclick="addNote('${t.ticket_id}')"
+        class="btn-primary w-full py-2 text-sm rounded-lg font-medium">Save Note</button>
+    </div>
+  `;
+}
+
+// ── Actions ──────────────────────────────────────────────
+
+async function updateStatus(ticket_id, status) {
+  await apiFetch('/api/tickets/' + ticket_id, {
+    method: 'PUT', body: JSON.stringify({ status })
+  });
+  loadTickets();
+  selectTicket(ticket_id);
+}
+
+async function addNote(ticket_id) {
+  const inp = document.getElementById('note-input');
+  const note = inp.value.trim();
+  if (!note) return;
+  await apiFetch('/api/tickets/' + ticket_id, {
+    method: 'PUT', body: JSON.stringify({ note })
+  });
+  inp.value = '';
+  selectTicket(ticket_id);
+}
+
+async function createTicket() {
+  const name    = document.getElementById('f-name').value.trim();
+  const email   = document.getElementById('f-email').value.trim();
+  const subject = document.getElementById('f-subject').value.trim();
+  const desc    = document.getElementById('f-desc').value.trim();
+  if (!name || !email || !subject || !desc) { alert('Please fill all fields.'); return; }
+  const t = await apiFetch('/api/tickets', {
+    method: 'POST',
+    body: JSON.stringify({ customer_name:name, customer_email:email, subject, description:desc })
+  });
+  closeModal();
+  await loadTickets();
+  selectTicket(t.ticket_id);
+}
+
+function setStatusFilter(status, el) {
+  currentFilter = status;
+  document.querySelectorAll('.filter-pill').forEach(p => {
+    p.classList.remove('bg-teal-600','text-white','border-teal-600');
+    p.classList.add('text-gray-500','border-gray-200');
+  });
+  el.classList.add('bg-teal-600','text-white','border-teal-600');
+  el.classList.remove('text-gray-500','border-gray-200');
+  loadTickets();
+}
+
+let searchTimer;
+function handleSearch(val) {
+  clearTimeout(searchTimer);
+  searchTimer = setTimeout(() => { currentSearch = val; loadTickets(); }, 250);
+}
+
+function openModal()  { document.getElementById('modal').classList.remove('hidden'); }
+function closeModal() {
+  document.getElementById('modal').classList.add('hidden');
+  ['f-name','f-email','f-subject','f-desc'].forEach(id => document.getElementById(id).value = '');
+}
+
+// ── Init ─────────────────────────────────────────────────
+loadTickets();
+</script>
+</body>
+</html>
